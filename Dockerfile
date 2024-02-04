@@ -50,3 +50,4 @@ COPY . .
 
 # Define the command to run the application
 CMD ["/bin/bash", "run.sh"]
+ 
