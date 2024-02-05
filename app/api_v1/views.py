@@ -18,11 +18,66 @@ import os
 
 @api.route('/health', methods=['GET'])
 def get_health():
+    """
+    Health Check Endpoint
+    ---
+    tags:
+       - System
+    description: Check the health of the system
+    responses:
+       200:
+          description: Health status of the system
+          examples:
+             application/json: {"message": "ok"}
+    """
     return jsonify({"message":"ok"})
 
 @api.route('/token', methods=['GET'])
 @login_required
 def generate_api_token():
+    """
+    Generate API Token
+    ---
+    tags:
+      - Authentication
+    parameters:
+      - in: query
+        name: expiration
+        type: integer
+        required: false
+        description: Token expiration time in seconds
+    responses:
+      200:
+        description: API token generated
+        schema:
+          type: object
+          properties:
+            token:
+              type: string
+            expires_in:
+              type: integer
+    """
+    expiration = int(request.args.get("expiration", 600))
+    token = current_user.generate_auth_token(expiration=expiration)
+    return jsonify({"token": token, "expires_in": expiration})
+    """
+    Generate API Token
+    ---
+    tags:
+       - Authentication
+    description: Generate a new API token for the user
+    parameters:
+      - in: query
+        name: expiration
+        type: integer
+        required: false
+        description: Expiration time of the token in seconds
+    responses:
+       200:
+          description: API token
+          examples:
+             application/json: {"token": "<token>", "expires_in": 600}
+    """
     expiration = int(request.args.get("expiration", 600))
     token = current_user.generate_auth_token(expiration=expiration)
     return jsonify({"token": token, "expires_in": expiration})
@@ -30,6 +85,39 @@ def generate_api_token():
 @api.route('/session', methods=['GET'])
 @login_required
 def get_session():
+    """
+    Get User Session
+    ---
+    tags:
+      - User Session
+    responses:
+      200:
+        description: Current user session details
+        schema:
+          type: object
+          properties:
+            tenant-id:
+              type: integer
+            tenant-uuid:
+              type: string
+    """
+    data = {
+        "tenant-id": session.get("tenant-id"),
+        "tenant-uuid": session.get("tenant-uuid"),
+    }
+    return jsonify(data)
+    """
+    Get User Session
+    ---
+    tags:
+       - User Session
+    description: Retrieve the current user session details
+    responses:
+       200:
+          description: User session information
+          examples:
+             application/json: {"tenant-id": 123, "tenant-uuid": "abc-123"}
+    """
     data = {
         "tenant-id": session.get("tenant-id"),
         "tenant-uuid": session.get("tenant-uuid"),
@@ -39,6 +127,30 @@ def get_session():
 @api.route('/session/<int:id>', methods=['PUT'])
 @login_required
 def set_session(id):
+    """
+    Set User Session
+    ---
+    tags:
+      - User Session
+    parameters:
+      - in: path
+        name: id
+        type: integer
+        required: true
+        description: Tenant ID to set in session
+    responses:
+      200:
+        description: Session updated
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+    """
+    result = Authorizer(current_user).can_user_access_tenant(id)
+    session["tenant-id"] = result["extra"]["tenant"].id
+    session["tenant-uuid"] = result["extra"]["tenant"].uuid
+    return jsonify({"message": "ok"})
     result = Authorizer(current_user).can_user_access_tenant(id)
     session["tenant-id"] = result["extra"]["tenant"].id
     session["tenant-uuid"] = result["extra"]["tenant"].uuid
@@ -47,12 +159,51 @@ def set_session(id):
 @api.route('/session/delete', methods=['GET'])
 @login_required
 def delete_session():
+    """
+    Delete User Session
+    ---
+    tags:
+      - User Session
+    responses:
+      200:
+        description: Session cleared
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+    """
+    session.clear()
+    return jsonify({"message": "ok"})
     session.clear()
     return jsonify({"message": "ok"})
 
 @api.route('/tenants/<int:id>', methods=['DELETE'])
 @login_required
 def delete_tenant(id):
+    """
+    Delete Tenant
+    ---
+    tags:
+      - Tenant Management
+    parameters:
+      - in: path
+        name: id
+        type: integer
+        required: true
+        description: Tenant ID to delete
+    responses:
+      200:
+        description: Tenant deleted
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+    """
+    result = Authorizer(current_user).can_user_admin_tenant(id)
+    result["extra"]["tenant"].delete()
+    return jsonify({"message": "ok"})
     result = Authorizer(current_user).can_user_admin_tenant(id)
     result["extra"]["tenant"].delete()
     return jsonify({"message": "ok"})
@@ -60,6 +211,26 @@ def delete_tenant(id):
 @api.route('/questionnaires/<int:qid>', methods=['GET'])
 @login_required
 def get_questionnaire(qid):
+    """
+    Get Questionnaire
+    ---
+    tags:
+      - Questionnaires
+    description: Retrieves details of a specific questionnaire.
+    parameters:
+      - in: path
+        name: qid
+        type: integer
+        required: true
+        description: Questionnaire ID
+    responses:
+      200:
+        description: Questionnaire details
+        schema:
+          type: object
+          properties:
+            # Define properties of questionnaire object
+    """
     result = Authorizer(current_user).can_user_read_questionnaire(qid)
     data = result["extra"]["questionnaire"].as_dict()
     available_guests = request.args.get("available-guests")
@@ -158,6 +329,28 @@ def get_bg_queues(id):
 @api.route('/tenants/<int:id>/tasks')
 @login_required
 def get_bg_tasks(id):
+    """
+    Manage Background Tasks
+    ---
+    tags:
+      - Tenant Management
+    description: Lists and manages background tasks or job queues for a specific tenant.
+    parameters:
+      - in: path
+        name: id
+        type: integer
+        required: true
+        description: Tenant ID
+    responses:
+      200:
+        description: Background tasks details
+        schema:
+          type: array
+          items:
+            type: object
+            properties:
+              # Define properties of task object
+    """
     Authorizer(current_user).can_user_read_tenant(id)
     with bg_app.open():
         r = BgHelper().list_tasks()
@@ -367,6 +560,22 @@ def get_tenants():
 @api.route('/admin/users', methods=['GET'])
 @login_required
 def get_users():
+    """
+    Get Users
+    ---
+    tags:
+      - User Management
+    description: Provides a list of all users in the system for administrative purposes.
+    responses:
+      200:
+        description: List of users
+        schema:
+          type: array
+          items:
+            type: object
+            properties:
+              # Define properties of user object
+    """
     result = Authorizer(current_user).can_user_manage_platform()
     data = []
     for user in models.User.query.all():
@@ -491,6 +700,34 @@ def create_policy_for_tenant(tid):
 @api.route('/tenants/<int:tid>/invite-user', methods=['POST'])
 @login_required
 def invite_user_to_tenant(tid):
+    """
+    Invite User to Tenant
+    ---
+    tags:
+      - Tenant Management
+    description: Invites a new user to a specific tenant.
+    parameters:
+      - in: path
+        name: tid
+        type: integer
+        required: true
+        description: Tenant ID
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            email:
+              type: string
+            roles:
+              type: array
+              items:
+                type: string
+    responses:
+      200:
+        description: User successfully invited
+    """
     result = Authorizer(current_user).can_user_admin_tenant(tid)
     email_configured = False
     if current_app.config["MAIL_USERNAME"] and current_app.config["MAIL_PASSWORD"]:
@@ -639,6 +876,26 @@ def delete_user_in_tenant(uid, tid):
 @api.route('/projects/<int:pid>', methods=['GET'])
 @login_required
 def project(pid):
+    """
+    Get Project
+    ---
+    tags:
+      - Project Management
+    description: Retrieves details of a specific project.
+    parameters:
+      - in: path
+        name: pid
+        type: integer
+        required: true
+        description: Project ID
+    responses:
+      200:
+        description: Project details
+        schema:
+          type: object
+          properties:
+            # Define properties of project object
+    """
     result = Authorizer(current_user).can_user_access_project(pid)
     review_summary = request.args.get("review-summary", False)
     if review_summary:
@@ -656,6 +913,26 @@ def delete_project(pid):
 @api.route('/policies/<int:pid>', methods=['GET'])
 @login_required
 def policy(pid):
+    """
+    Get Policy
+    ---
+    tags:
+      - Policy Management
+    description: Retrieves details of a specific policy.
+    parameters:
+      - in: path
+        name: pid
+        type: integer
+        required: true
+        description: Policy ID
+    responses:
+      200:
+        description: Policy details
+        schema:
+          type: object
+          properties:
+            # Define properties of policy object
+    """
     result = Authorizer(current_user).can_user_read_policy(pid)
     return jsonify(result["extra"]["policy"].as_dict())
 
@@ -964,6 +1241,38 @@ def set_applicability_of_control_for_project(cid):
 @api.route('/tenants/<int:tid>/tags/<int:ttid>', methods=['DELETE'])
 @login_required
 def delete_tag_for_tenant(tid, ttid):
+    """
+        Delete Tag for a Tenant
+        ---
+        tags:
+        - Tenant Management
+        parameters:
+        - in: path
+            name: tid
+            type: integer
+            required: true
+            description: The ID of the tenant.
+        - in: path
+            name: ttid
+            type: integer
+            required: true
+            description: The ID of the tag to delete.
+        responses:
+        200:
+            description: Tag deleted successfully.
+            schema:
+            type: object
+            properties:
+                message:
+                type: string
+                example: ok
+        401:
+            description: Unauthorized. If the user is not authenticated.
+        403:
+            description: Forbidden. If the user does not have permission to manage the tag.
+        404:
+            description: Not Found. If the tenant or tag with the given IDs does not exist.
+    """
     result = Authorizer(current_user).can_user_manage_tag(tid)
     db.session.delete(result["extra"]["tag"])
     db.session.commit()
@@ -972,6 +1281,43 @@ def delete_tag_for_tenant(tid, ttid):
 @api.route('/tenants/<int:tid>/tags', methods=['POST'])
 @login_required
 def create_tag_for_tenant(tid):
+    """
+        Create Tag for a Tenant
+        ---
+        tags:
+        - Tenant Management
+        parameters:
+        - in: path
+            name: tid
+            type: integer
+            required: true
+            description: The ID of the tenant.
+        - in: body
+            name: requestBody
+            description: JSON request body containing tag information.
+            required: true
+            schema:
+            type: object
+            properties:
+                name:
+                type: string
+                description: The name of the tag to create.
+        responses:
+        200:
+            description: Tag created successfully.
+            schema:
+            type: object
+            properties:
+                message:
+                type: string
+                example: ok
+        401:
+            description: Unauthorized. If the user is not authenticated.
+        403:
+            description: Forbidden. If the user does not have permission to manage the tenant.
+        404:
+            description: Not Found. If the tenant with the given ID does not exist.
+    """
     result = Authorizer(current_user).can_user_manage_tenant(tid)
     data = request.get_json()
     models.Tag.add(current_user.id, data.get("name"), result["extra"]["tenant"])
@@ -980,6 +1326,47 @@ def create_tag_for_tenant(tid):
 @api.route('/tenants/<int:tid>/labels', methods=['POST'])
 @login_required
 def create_label_for_tenant(tid):
+    """
+        Create Label for a Tenant
+        ---
+        tags:
+        - Tenant Management
+        parameters:
+        - in: path
+            name: tid
+            type: integer
+            required: true
+            description: The ID of the tenant.
+        - in: body
+            name: requestBody
+            description: JSON request body containing label information.
+            required: true
+            schema:
+            type: object
+            properties:
+                key:
+                type: string
+                description: The key for the label to create.
+                value:
+                type: string
+                description: The value for the label to create.
+        responses:
+        200:
+            description: Label created successfully.
+            schema:
+            type: object
+            properties:
+                message:
+                type: string
+                example: ok
+        401:
+            description: Unauthorized. If the user is not authenticated.
+        403:
+            description: Forbidden. If the user does not have permission to manage the tenant.
+        404:
+            description: Not Found. If the tenant with the given ID does not exist.
+"""
+
     result = Authorizer(current_user).can_user_manage_tenant(tid)
     data = request.get_json()
     result["extra"]["tenant"].labels.append(

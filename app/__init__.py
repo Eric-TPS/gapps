@@ -8,6 +8,8 @@ from flask_login import LoginManager
 from flask_babel import Babel, lazy_gettext as _l
 import logging
 import json
+from flasgger import Swagger
+
 
 
 db = SQLAlchemy()
@@ -86,6 +88,8 @@ def create_app(config_name="default"):
     def before_request():
         pass
     '''
+    
+    Swagger(app)
 
     return app
 
